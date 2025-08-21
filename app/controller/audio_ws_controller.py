@@ -1,8 +1,16 @@
 from io import BytesIO
 from fastapi import APIRouter, WebSocket
 from app.services.audio_service import process_audio_paid
+from azure.webpubsub import WebPubSubServiceClient
 
 router = APIRouter()
+import os
+WebPub = os.getenv("WebPubService")
+
+# Initialize Azure Web PubSub client
+service = WebPubSubServiceClient.from_connection_string(WebPub, hub="interview-hub"
+)
+
 
 @router.websocket("/ws/audio")
 async def audio_websocket_endpoint(websocket: WebSocket,client_id : str):
