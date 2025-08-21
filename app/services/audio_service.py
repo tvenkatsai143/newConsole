@@ -1,33 +1,16 @@
-from datetime import timedelta
 import io
-import json
 import os
 import tempfile
+from faster_whisper import WhisperModel
 from fastapi import UploadFile
 import openai
+from app.core.config import OPENAI_API_KEY
 from app.schemas.response_schemas import api_response
 from http import HTTPStatus
-import fitz
-import redis
-# from faster_whisper import WhisperModel
-from dotenv import load_dotenv
-import json
 
-load_dotenv()
-# whisper_model = WhisperModel("tiny.en", compute_type="int8")  # or "base.en" for better accuracy
-openai.api_key = os.getenv("OPENAI_API_KEY", )
-RESUME_CONTEXT = {}
+openai.api_key = OPENAI_API_KEY
+whisper_model = WhisperModel("tiny.en", compute_type="int8")  # or "base.en" for better accuracy
 
-# redis_client = redis.Redis(host='localhost', port=6379, db=0)
-redis_client = redis.Redis(
-    host=os.getenv("REDIS_HOST"),
-    port=int(os.getenv("REDIS_PORT")),
-    db=os.getenv("REDIS_DB"),
-    password=os.getenv("REDIS_PASSWORD")
-)
-
-
-# --- Check OpenAI Keys ---
 def check_openai_api_key():
     if not openai.api_key:
         return api_response(responseCode=HTTPStatus.NOT_FOUND, message="OPENAI_API_KEY not found in environment variables", payLoad=None)
@@ -47,6 +30,14 @@ def check_openai_api_key():
         )
 
 
+
+# RESUME_CONTEXT = ""  # Will hold summarized resume context
+RESUME_CONTEXT = {}  # key: client_id, value: summarized resume
+import fitz
+
+# -----------------------------
+# 1. Resume Upload API
+# -----------------------------
 async def extract_text_from_pdf(file: UploadFile) -> str:
     pdf = fitz.open(stream=await file.read(), filetype="pdf")
     text = ""
@@ -67,21 +58,35 @@ async def summarize_resume(resume_text: str) -> str:
     )
     return gpt_response.choices[0].message.content.strip()
 
-# Resume Upload API
+# ---------------------- 31-07-2025 ----------------------------------
+# async def process_resume_upload(file, client_id):
+#     global RESUME_CONTEXT
+#     try:
+#         resume_text = await extract_text_from_pdf(file)
+#         RESUME_CONTEXT = await summarize_resume(resume_text)
 
-# Resume Upload API
-async def process_resume_upload(file: UploadFile, client_id: str):
+#         return api_response(
+#             responseCode=HTTPStatus.OK,
+#             message="Resume uploaded and summarized successfully.",
+#             payLoad={"resume_summary": RESUME_CONTEXT}
+#         )
+#     except Exception as e:
+#         return api_response(
+#             responseCode=HTTPStatus.INTERNAL_SERVER_ERROR,
+#             message=f"Failed to process resume: {str(e)}",
+#             payLoad=None
+#         )
+
+
+async def process_resume_upload(file, client_id):
+    global RESUME_CONTEXT
     try:
-        # Step 1: Extract and summarize resume
         resume_text = await extract_text_from_pdf(file)
         summary = await summarize_resume(resume_text)
 
-        # Step 2: Save to Redis with 90-minute expiry
-        redis_key = f"resume:{client_id}"
-        # redis_client.setex(redis_key, timedelta(minutes=90), summary)
-        expiry_seconds = int(timedelta(minutes=90).total_seconds()) 
-        redis_client.setex(redis_key, expiry_seconds, summary)
-
+        # Store resume context against the client_id
+        RESUME_CONTEXT[client_id] = summary
+        print("resume",RESUME_CONTEXT)
         return api_response(
             responseCode=HTTPStatus.OK,
             message="Resume uploaded and summarized successfully.",
@@ -93,52 +98,72 @@ async def process_resume_upload(file: UploadFile, client_id: str):
             responseCode=HTTPStatus.INTERNAL_SERVER_ERROR,
             message=f"Failed to process resume: {str(e)}",
             payLoad=None
-            )
-
-
-
-async def process_audio_paid(audio_io: io.BytesIO, client_id):
-    transcribed_text = None
-    language = None
-    try:        
-       # Set the correct filename and extension for the BytesIO buffer
-        audio_io.name = "audio.webm"  # ✅ Tells OpenAI the format
-
-        # Now pass just the file-like object (no tuple)
-        transcript = openai.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_io,
-            language="en",
-            response_format="verbose_json"
         )
 
+# -----------------------------------------------------
+# 2. Updated process interview question in audio file
+# -----------------------------------------------------
+async def process_audio_paid(audio_io: io.BytesIO, client_id):
+    print("=================")
+    # print(f"Number of users in memory: {len(RESUME_CONTEXT)}")
+    try:
+        # audio_bytes = await file.read()
+        # audio_stream = io.BytesIO(audio_bytes)
 
-        transcribed_text = transcript.text.strip()
-        language = getattr(transcript, "language", "en")
+        # transcript = openai.audio.transcriptions.create(
+        #     model="whisper-1",
+        #     file=("audio.wav", audio_stream),
+        #     language="en",
+        #     response_format="verbose_json"
+        # )
         # transcribed_text = transcript.text.strip()
+        # language = transcript.language
 
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as temp_audio:
+            temp_audio.write(audio_io.read())
+            temp_audio_path = temp_audio.name  # Store path to reopen it
+
+        # Now file is closed — safe for FFmpeg to access
+        segments, info = whisper_model.transcribe(temp_audio_path)
+        transcribed_text = " ".join([seg.text for seg in segments]).strip()
+        language = info.language
+        # Clean up temp file
+        os.remove(temp_audio_path)
         if not transcribed_text:
             return api_response(
                 responseCode=HTTPStatus.BAD_REQUEST,
                 message="No speech detected in the audio.",
                 payLoad=None
             )
-
-        # Checking cached response in Redis
-
-        # Fetch resume context from Redis
-        redis_key = f"resume:{client_id}"
-        resume_context = redis_client.get(redis_key)
+        # Fetch resume context for the client_id
+        # resume_context =None
+        # if(RESUME_CONTEXT == {}):
+        #     return {
+        #     "transcribed_text": None,
+        #     "language": language,
+        #     "ai_response": "Resume context not found. Please upload the resume first"
+        #     }
+        # resume_context = RESUME_CONTEXT.get(client_id)
+        # if not resume_context:
+        #     return {
+        #     "transcribed_text": None,
+        #     "language": language,
+        #     "ai_response": "Resume context not found. Please upload the resume first"
+        #     }
+        print("resume",RESUME_CONTEXT)
+        resume_context = RESUME_CONTEXT.get(client_id)
         if not resume_context:
-           return {
+            return {
             "transcribed_text": None,
             "language": language,
             "ai_response": "Resume context not found. Please upload the resume first"
             }
 
-        # Redis returns bytes, decode to string
-        resume_context = resume_context.decode('utf-8')
-        # Asking OpenAI for interview response
+        # Prepare user prompt with resume context
+        # user_prompt = f"Resume Context:\n{RESUME_CONTEXT}\n\nInterview Question: {transcribed_text}"
+        # if language != "en":
+        #     user_prompt += "\n\nPlease respond in English."
+
         gpt_response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -162,8 +187,12 @@ async def process_audio_paid(audio_io: io.BytesIO, client_id):
             ],
         )
         response_text = gpt_response.choices[0].message.content
-        # Cache the response in Redis
-        # redis_client.set(cache_key, json.dumps(response), ex=60 * 60)  # cache for 1 hour
+
+        # response = {
+        #     "transcribed_text": transcribed_text,
+        #     # "language": language,
+        #     "ai_response": response_text
+        # }
 
         return {
             "transcribed_text": transcribed_text,
@@ -178,35 +207,32 @@ async def process_audio_paid(audio_io: io.BytesIO, client_id):
             "ai_response": f"An Exception Occurred: {str(e)}"
         }
 
-# Updated process_audio_paid_ws
-async def process_audio_paid_ws(audio_data, filename, websocket):
-    temp_file = f"temp_{filename}"
+# -----------------------------
+# 3. Updated process_audio_paid_ws
+# -----------------------------
+async def process_audio_paid_ws(audio_io: io.BytesIO):
     try:
-        with open(temp_file, "wb") as f:
-            f.write(audio_data)
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as temp_audio:
+            temp_audio.write(audio_io.read())
+            temp_audio_path = temp_audio.name  # Store path to reopen it
 
-        with open(temp_file, "rb") as audio_file:
-            transcript = openai.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                language="en",
-                response_format="verbose_json"
-            )
-        transcribed_text = transcript.text.strip()
-        language = transcript.language
+        # Now file is closed — safe for FFmpeg to access
+        segments, info = whisper_model.transcribe(temp_audio_path)
+        transcribed_text = " ".join([seg.text for seg in segments]).strip()
+        language = info.language
 
-        os.remove(temp_file)
-
+        # Clean up temp file
+        os.remove(temp_audio_path)
         if not transcribed_text:
             return {"error": "No speech detected in the audio."}
-
+# gpt-3.5-turbo
         # Add resume context
         user_prompt = f"Resume Context:\n{RESUME_CONTEXT}\n\nInterview Question: {transcribed_text}"
         if language != "en":
             user_prompt += "\n\nPlease respond in English."
 
         gpt_response = openai.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a candidate answering questions based on the resume context."},
                 {"role": "user", "content": user_prompt},
@@ -224,52 +250,21 @@ async def process_audio_paid_ws(audio_data, filename, websocket):
         return api_response(responseCode=HTTPStatus.INTERNAL_SERVER_ERROR, message=f"An Expected error occured {str(e)}", payLoad = None)
 
 
-# async def logout_user(client_id):
-#     try:
-    
-#         # Delete from Redis
-#         redis_key = f"resume:{client_id}"
-#         redis_deleted = redis_client.delete(redis_key)
-
-#         return api_response(
-#             responseCode=HTTPStatus.OK,
-#             message="User logged out successfully. Resume context and Redis key deleted.",
-#             payLoad={"redis_deleted": bool(redis_deleted)}
-#         )
-
-#     except Exception as e:
-#         return api_response(
-#             responseCode=HTTPStatus.INTERNAL_SERVER_ERROR,
-#             message=f"An unexpected error occurred: {str(e)}",
-#             payLoad=None
-#         )
-
 async def logout_user(client_id):
     try:
-        # Delete main resume key
-        resume_key = f"resume:{client_id}"
-        redis_client.delete(resume_key)
-
-        # Find and delete all question-related keys for this client
-        pattern = f"{client_id}:*"
-        keys_to_delete = []
-        cursor = 0
-
-        while True:
-            cursor, keys = redis_client.scan(cursor=cursor, match=pattern)
-            keys_to_delete.extend(keys)
-            if cursor == 0:
-                break
-
-        if keys_to_delete:
-            redis_client.delete(*keys_to_delete)
-
-        return api_response(
-            responseCode=HTTPStatus.OK,
-            message="User logged out successfully. All Redis keys deleted.",
-            payLoad={"deleted_keys": [resume_key] + keys_to_delete}
-        )
-
+        if client_id in RESUME_CONTEXT:
+            del RESUME_CONTEXT[client_id]
+            return api_response(
+                responseCode=HTTPStatus.OK,
+                message="User logged out successfully and resume context cleared.",
+                payLoad=None
+            )
+        else:
+            return api_response(
+                responseCode=HTTPStatus.NOT_FOUND,
+                message="Client ID not found.",
+                payLoad=None
+            )
     except Exception as e:
         return api_response(
             responseCode=HTTPStatus.INTERNAL_SERVER_ERROR,
