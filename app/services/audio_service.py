@@ -129,28 +129,28 @@ async def process_audio_paid(audio_io: io.BytesIO, client_id):
         language = info.language
         # Clean up temp file
         os.remove(temp_audio_path)
-      transcribed_text = """Full-Stack Developer with 3+ years of experience in building scalable web, mobile, and IoT solutions using Angular, Vue.js, React.js, .NET Core, C#, SQL, PostgreSQL, and Microsoft Azure. Strong expertise in cloud automation, IoT-based applications, financial tech tools, and real-time dashboards. Skilled at integrating APIs, automating workflows, and delivering optimized, secure, and maintainable solutions.
+        transcribed_text = """Full-Stack Developer with 3+ years of experience in building scalable web, mobile, and IoT solutions using Angular, Vue.js, React.js, .NET Core, C#, SQL, PostgreSQL, and Microsoft Azure. Strong expertise in cloud automation, IoT-based applications, financial tech tools, and real-time dashboards. Skilled at integrating APIs, automating workflows, and delivering optimized, secure, and maintainable solutions.
 
-Key Experience:
-- Developed and maintained web & mobile apps using Angular, Vue.js, and .NET Core.
-- Designed and deployed IoT-based temperature monitoring systems with Azure integration for real-time alerts.
-- Built Azure Functions & Service Bus pipelines for automated data handling and notifications.
-- Integrated Telegram & Angel One APIs for financial and alerting applications.
-- Engineered a stock screener tool using RSI/MACD logic with automated Telegram alerts.
-- Created real-time dashboards and reporting tools for analytics.
+        Key Experience:
+        - Developed and maintained web & mobile apps using Angular, Vue.js, and .NET Core.
+        - Designed and deployed IoT-based temperature monitoring systems with Azure integration for real-time alerts.
+        - Built Azure Functions & Service Bus pipelines for automated data handling and notifications.
+        - Integrated Telegram & Angel One APIs for financial and alerting applications.
+        - Engineered a stock screener tool using RSI/MACD logic with automated Telegram alerts.
+        - Created real-time dashboards and reporting tools for analytics.
 
-Projects:
-- Chef Worksheet & Menu Management System – Cross-platform solution (Angular for web, Vue.js for mobile) powered by a single .NET Core Web API ensuring consistency and reusability.
-- IoT Temperature Monitoring System – Captured and processed live temperature data from food storage containers with Azure-triggered alerts.
-- Automated Stock Alert System – Developed with .NET 6, Azure Cosmos DB, and custom C# algorithms, integrating RSI, MACD, support/resistance, and Telegram Bot for automated stock alerts.
+        Projects:
+        - Chef Worksheet & Menu Management System – Cross-platform solution (Angular for web, Vue.js for mobile) powered by a single .NET Core Web API ensuring consistency and reusability.
+        - IoT Temperature Monitoring System – Captured and processed live temperature data from food storage containers with Azure-triggered alerts.
+        - Automated Stock Alert System – Developed with .NET 6, Azure Cosmos DB, and custom C# algorithms, integrating RSI, MACD, support/resistance, and Telegram Bot for automated stock alerts.
 
-Skills:
-- Frontend: Angular, Vue.js, React.js, HTML, CSS
-- Backend: .NET Core, C#
-- Cloud & DevOps: Azure Cloud, Azure DevOps, Azure Functions, Service Bus, Cosmos DB
-- Databases: SQL, PostgreSQL
-- Others: API integration, real-time dashboards, automation
-"""
+        Skills:
+        - Frontend: Angular, Vue.js, React.js, HTML, CSS
+        - Backend: .NET Core, C#
+        - Cloud & DevOps: Azure Cloud, Azure DevOps, Azure Functions, Service Bus, Cosmos DB
+        - Databases: SQL, PostgreSQL
+        - Others: API integration, real-time dashboards, automation
+        """
 
         # if not transcribed_text:
         #     return api_response(

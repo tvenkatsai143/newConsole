@@ -1,12 +1,16 @@
 from io import BytesIO
+from dotenv import load_dotenv
 from fastapi import APIRouter, WebSocket
 from app.services.audio_service import process_audio_paid
-from azure.webpubsub import WebPubSubServiceClient
+from azure.messaging.webpubsubservice import WebPubSubServiceClient
 
 router = APIRouter()
 import os
+load_dotenv()  # load .env from project root
 WebPub = os.getenv("WebPubService")
-
+if WebPub is None:
+    print("--------------------------------------------------")
+    raise ValueError("❌ WebPubService environment variable is not set")
 # Initialize Azure Web PubSub client
 service = WebPubSubServiceClient.from_connection_string(WebPub, hub="interview-hub"
 )
